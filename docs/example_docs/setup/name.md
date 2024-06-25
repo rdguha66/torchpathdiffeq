@@ -4,7 +4,7 @@ Now for your first major task: **replace all instances of the word "torchpathdif
 
 !!! Note
 
-    Don't forget to update the name of the `/torchpathdiffeq` folder, e.g. so that it is of the form `<MyPackageName>`.
+    Don't forget to update the name of the `torchpathdiffeq` folder, e.g. so that it is of the form `<MyPackageName>`.
 
 !!! Tip
 
