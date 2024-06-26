@@ -11,7 +11,6 @@ def _adaptively_add_y(ode_fxn, y, t, t_add, idxs_add):
         y = torch.tensor([])
     
     # Calculate new geometries
-    #print("ADD PARALLEL EVAL TIMES", eval_times)
     y_add = ode_fxn(t_add)
     
     # Place new geometries between existing 
@@ -19,7 +18,6 @@ def _adaptively_add_y(ode_fxn, y, t, t_add, idxs_add):
         (len(y)+len(y_add), y_add.shape[-1]),
         requires_grad=False
     ).detach()
-    #print("GEO SHAPES", geos.shape, old_geos.shape, idxs_old.shape)
     y_idxs = None
     if y is not None and len(y):
         y_idxs = torch.arange(len(y), dtype=torch.int)
@@ -35,8 +33,6 @@ def _adaptively_add_y(ode_fxn, y, t, t_add, idxs_add):
     t_combined = torch.zeros(
         (len(y)+len(t_add), 1), requires_grad=False
     )
-    #print("OLD IDXS", idxs_old[77:85])
-    #print("NEW IDXS", idxs_new)
     if y_idxs is not None:
         t_combined[y_idxs] = t
     t_combined[idxs_add] = t_add
@@ -51,10 +47,10 @@ def _find_excess_y(p, error_ratios, remove_cut):
     # Since error ratios encompasses 2 RK steps each neighboring element shares
     # a step, we cannot remove that same step twice and therefore remove the 
     # first in pair of steps that it appears in
-    print("RC1", ratio_mask_cut)
+    #print("RC1", ratio_mask_cut)
     for idx in range(1, len(ratio_mask_cut)):
         ratio_mask_cut[idx] = ratio_mask_cut[idx] and not ratio_mask_cut[idx-1]
-    print("RC2", ratio_mask_cut)
+    #print("RC2", ratio_mask_cut)
     ratio_idxs_cut = torch.where(ratio_mask_cut)[0]
 
     # Remove every other intermediate evaluation point
@@ -125,7 +121,7 @@ def _remove_idxs_to_ranges(idxs_cut):
     return ranges_cut
 
 def _find_sparse_y(t, p, error_ratios):
-    print("SPARSE ERROR RATIO", error_ratios)
+    #print("SPARSE ERROR RATIO", error_ratios)
     ratio_idxs_cut = torch.where(error_ratios > 1.)[0]
     ratio_idxs_cut = p*ratio_idxs_cut + 1
     idxs_add = torch.flatten(
