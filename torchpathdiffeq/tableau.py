@@ -13,7 +13,7 @@ def euler_tableau_b(dt):
         dim=-1
     )
 
-def trapezoid_tableau_b(dt):
+def heun_tableau_b(dt):
     """
     Heun's Method, aka Trapazoidal Rule
 

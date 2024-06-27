@@ -3,7 +3,8 @@ from . import tableau
 from .solvers import degree, steps, ParallelAdaptiveStepsizeSolver
 
 TABLEAU_CALCULATORS = {
-    (steps.ADAPTIVE, 1) : (tableau.euler_tableau_b, tableau.trapezoid_tableau_b)
+    (steps.ADAPTIVE, 1) : (tableau.euler_tableau_b, tableau.heun_tableau_b),
+    (steps.ADAPTIVE, 2) : (tableau.euler_tableau_b, tableau.heun_tableau_b)
 }
 
 class RKParallelAdaptiveStepsizeSolver(ParallelAdaptiveStepsizeSolver):
@@ -35,7 +36,6 @@ class RKParallelAdaptiveStepsizeSolver(ParallelAdaptiveStepsizeSolver):
         )
         """
         
-        print(y.shape)
         y_steps = torch.reshape(y[1:], (-1, max(self.p-1, 1)))
         y_steps = torch.concatenate(
             [
