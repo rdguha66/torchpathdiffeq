@@ -1,5 +1,4 @@
 import torch
-import pytest
 
 from torchpathdiffeq.runge_kutta import RKParallelAdaptiveStepsizeSolver
 
