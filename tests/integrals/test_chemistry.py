@@ -20,8 +20,12 @@ def wolf_schlegel(t, y=None):
 def test_chemistry():
     atol = 1e-5
     rtol = 1e-5
-    parallel_integrator = RKParallelAdaptiveStepsizeSolver(1, atol, rtol, remove_cut=0.1, ode_fxn=wolf_schlegel)
-    serial_integrator = SerialAdaptiveStepsizeSolver("adaptive_heun", atol, rtol, ode_fxn=wolf_schlegel)
+    parallel_integrator = RKParallelAdaptiveStepsizeSolver(
+        'euler', atol, rtol, remove_cut=0.1, ode_fxn=wolf_schlegel
+    )
+    serial_integrator = SerialAdaptiveStepsizeSolver(
+        "adaptive_heun", atol, rtol, ode_fxn=wolf_schlegel
+    )
 
     parallel_integral = parallel_integrator.integrate()
     serial_integral = serial_integrator.integrate()

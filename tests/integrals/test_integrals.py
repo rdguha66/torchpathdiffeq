@@ -60,7 +60,9 @@ def test_integrals():
     cutoff = 0.05
     t_init = 0.
     t_final = 1.
-    integrator = RKParallelAdaptiveStepsizeSolver(p=1, atol=1e-7, rtol=1e-7, remove_cut=0.105)
+    integrator = RKParallelAdaptiveStepsizeSolver(
+        solver='euler', atol=1e-7, rtol=1e-7, remove_cut=0.105
+    )
     for name, (ode, solution) in ODE_dict.items():
         integral_output = integrator.integrate(ode, t_init=t_init, t_final=t_final)
         correct = solution(t_init=t_init, t_final=t_final)

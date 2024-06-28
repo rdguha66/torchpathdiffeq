@@ -1,27 +1,28 @@
 import torch
 from numpy.testing import assert_allclose, assert_array_equal
 from torchpathdiffeq import ode_path_integral, RKParallelAdaptiveStepsizeSolver
-from torchpathdiffeq.path_integral import ADAPTIVE_SOLVER_P
+from torchpathdiffeq.solvers import ADAPTIVE_SOLVER_P
 from ..integrals.test_chemistry import wolf_schlegel
 
 def test_ode_path_integral_fxn():
-    method_name = 'euler'
+    solver = 'euler'
     p=1
     atol = 1e-5
     rtol = 1e-7
-    assert ADAPTIVE_SOLVER_P[method_name] == p
+    assert ADAPTIVE_SOLVER_P[solver] == p
     
     OPI_integral = ode_path_integral(
         ode_fxn=wolf_schlegel,
         y0=0,
         t=None,
-        method=method_name,
+        solver=solver,
         atol=atol,
         rtol=rtol,
+        computation='parallel'
     )
 
     RK_integrator = RKParallelAdaptiveStepsizeSolver(
-        p=p,
+        solver=solver,
         atol=atol,
         rtol=rtol,
         ode_fxn=wolf_schlegel

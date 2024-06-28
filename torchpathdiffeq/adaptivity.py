@@ -44,13 +44,13 @@ def _find_excess_y(p, error_ratios, remove_cut):
         
     #ratio_idxs_cut = torch.where(error_ratios < remove_cut)[0]
     ratio_mask_cut = error_ratios < remove_cut
+    if len(error_ratios) <= 1:
+        return torch.zeros([len(error_ratios)], dtype=bool)
     # Since error ratios encompasses 2 RK steps each neighboring element shares
     # a step, we cannot remove that same step twice and therefore remove the 
     # first in pair of steps that it appears in
     #print("RC1", ratio_mask_cut)
-    for idx in range(1, len(ratio_mask_cut)):
-        ratio_mask_cut[idx] = ratio_mask_cut[idx] and not ratio_mask_cut[idx-1]
-    #print("RC2", ratio_mask_cut)
+    ratio_mask_cut = _rec_remove(error_ratios < remove_cut)
     ratio_idxs_cut = torch.where(ratio_mask_cut)[0]
 
     # Remove every other intermediate evaluation point
@@ -90,6 +90,24 @@ def _find_excess_y(p, error_ratios, remove_cut):
     
     return geos, eval_times
 """
+
+def _rec_remove(mask):
+    mask2 = mask[:-1]*mask[1:]
+    if torch.any(mask2):
+        if mask2[0]:
+            mask[1] = False
+        if len(mask) > 2:
+            return _rec_remove(torch.concatenate(
+                [
+                    mask[:2],
+                    mask2[1:]*mask[:-2] + (~mask2[1:])*mask[2:]
+                ]
+            ))
+        else:
+            return mask
+    else:
+        return mask
+
 
 
 def __remove_idxs_to_ranges(idxs_cut):
