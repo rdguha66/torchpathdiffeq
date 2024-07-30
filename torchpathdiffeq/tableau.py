@@ -9,7 +9,7 @@ def euler_tableau_b(dt):
     """
 
     return torch.concatenate(
-        [torch.ones((1, 1)), torch.zeros((1, 1))],
+        [torch.ones((1, 1), device=dt.device), torch.zeros((1, 1), device=dt.device)],
         dim=-1
     )
 
@@ -23,4 +23,4 @@ def heun_tableau_b(dt):
     1 | 0.5
     """
     
-    return torch.ones((1, 2))*0.5
+    return torch.ones((1, 2), device=dt.device)*0.5

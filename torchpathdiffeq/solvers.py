@@ -34,15 +34,16 @@ class IntegralOutput():
     
 
 class SolverBase():
-    def __init__(self, solver, atol, rtol, y0=torch.tensor([0], dtype=torch.float), ode_fxn=None, t_init=0., t_final=1.) -> None:
+    def __init__(self, solver, atol, rtol, y0=None, ode_fxn=None, t_init=0., t_final=1., device=None) -> None:
 
         self.solver = solver.lower()
         self.atol = atol
         self.rtol = rtol
         self.ode_fxn = ode_fxn
-        self.y0 = y0
+        self.y0 = y0 if y0 is not None else torch.tensor([0], dtype=torch.float, device=device)
         self.t_init = t_init
         self.t_final = t_final
+        self.device = device
 
     def _calculate_integral(self, t, y, y0=0, degr=degree.P1):
         raise NotImplementedError
@@ -56,16 +57,8 @@ class SolverBase():
 
 
 class SerialAdaptiveStepsizeSolver(SolverBase):
-    def __init__(self, solver, atol, rtol, y0=torch.tensor([0], dtype=torch.float), ode_fxn=None, t_init=0, t_final=1.) -> None:
-        super().__init__(
-            solver=solver,
-            atol=atol,
-            rtol=rtol,
-            ode_fxn=ode_fxn,
-            y0=y0,
-            t_init=t_init,
-            t_final=t_final
-        )
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
 
     
     def integrate(self, ode_fxn=None, state=None, y0=None, t_init=0., t_final=1., t=None, ode_args=None):
@@ -73,7 +66,7 @@ class SerialAdaptiveStepsizeSolver(SolverBase):
         y0 = self.y0 if y0 is None else y0
         assert ode_fxn is not None, "Must specify ode_fxn or pass it during class initialization."
         if t is None:
-            t=torch.tensor([t_init, t_final])
+            t=torch.tensor([t_init, t_final], device=self.device)
         if state is not None:
             t = state.t
         
@@ -100,22 +93,12 @@ class SerialAdaptiveStepsizeSolver(SolverBase):
 
 class ParallelAdaptiveStepsizeSolver(SolverBase):
     
-    def __init__(self, solver, atol, rtol, remove_cut=0.1, y0=torch.tensor([0], dtype=torch.float), ode_fxn=None, t_init=0, t_final=1.):
-        super().__init__(
-            solver=solver,
-            atol=atol,
-            rtol=rtol,
-            ode_fxn=ode_fxn,
-            y0=y0,
-            t_init=t_init,
-            t_final=t_final
-        )
+    def __init__(self, remove_cut=0.1, **kwargs) -> None:
+        super().__init__(**kwargs)
 
-        assert solver in ADAPTIVE_SOLVER_P,\
+        assert self.solver in ADAPTIVE_SOLVER_P,\
             f"Do not recognize solver {self.solver}, choose from: {list(ADAPTIVE_SOLVER_P.keys())}"
         self.p = ADAPTIVE_SOLVER_P[self.solver]
-        self.atol = atol
-        self.rtol = rtol
         self.remove_cut = remove_cut
         self.previous_t = None
         self.previous_ode_fxn = None
@@ -126,7 +109,7 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
         ode_fxn = self.ode_fxn if ode_fxn is None else ode_fxn
         y0 = self.y0 if y0 is None else y0
         assert ode_fxn is not None, "Must specify ode_fxn or pass it during class initialization."
-        assert len(ode_fxn(torch.tensor([[t_init]])).shape) >= 2
+        assert len(ode_fxn(torch.tensor([[t_init]], device=self.device)).shape) >= 2
         if state is not None:
             t = state.t
             remove_mask = state.remove_mask
@@ -139,7 +122,7 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
             if self.previous_t is None\
                 or self.previous_ode_fxn != ode_fxn.__name__:
                 t_add = torch.unsqueeze(
-                    torch.linspace(t_init, t_final, 7), 1
+                    torch.linspace(t_init, t_final, 7, device=self.device), 1
                 )
             else:
                 mask = (self.previous_t[:,0] <= t_final)\
@@ -147,7 +130,7 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
                 t_add = self.previous_t[mask]
 
         y_pruned, t_pruned = None, None
-        idxs_add = torch.arange(len(t_add))
+        idxs_add = torch.arange(len(t_add), device=self.device)
         loop_cnt = 0
         while len(t_add) > 0:
             tl0 = time.time()
@@ -158,7 +141,7 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
             # Evaluate new points and add new evals and points to arrays
             t0 = time.time()
             y, t = _adaptively_add_y(
-                ode_fxn, y_pruned, t_pruned, t_add, idxs_add
+                ode_fxn, y_pruned, t_pruned, t_add, idxs_add, device=self.device
             )
             if speed_verbose: print("\t add time", time.time() - t0)
             if verbose:
@@ -187,7 +170,7 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
             
             # Create mask for remove points that are too close
             t0 = time.time()
-            remove_mask = _find_excess_y(self.p, error_ratios_2steps, self.remove_cut)
+            remove_mask = _find_excess_y(self.p, error_ratios_2steps, self.remove_cut, device=self.device)
             if speed_verbose: print("\t removal mask", time.time() - t0)
             assert (len(remove_mask) == len(t))
             if verbose:
@@ -213,7 +196,7 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
             )
 
             t_add, idxs_add = _find_sparse_y(
-                t_pruned, self.p, error_ratios_pruned
+                t_pruned, self.p, error_ratios_pruned, device=self.device
             )
 
             if speed_verbose: print("\tLOOP TIME", time.time() - tl0)

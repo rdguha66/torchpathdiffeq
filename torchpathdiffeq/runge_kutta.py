@@ -8,12 +8,9 @@ TABLEAU_CALCULATORS = {
 }
 
 class RKParallelAdaptiveStepsizeSolver(ParallelAdaptiveStepsizeSolver):
-    def __init__(self, solver, atol, rtol, y0=torch.tensor([0], dtype=torch.float), remove_cut=0.1, ode_fxn=None, t_init=0., t_final=1.):
-        super().__init__(
-            solver=solver, atol=atol, rtol=rtol, remove_cut=remove_cut, ode_fxn=ode_fxn, t_init=t_init, t_final=t_final
-        )
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
         self.tableau_b_p, self.tableau_b_p1 = TABLEAU_CALCULATORS[(steps.ADAPTIVE, self.p)]
-        self.y0 = y0
     
 
     def _calculate_integral(self, t, y, y0=0, degr=degree.P1):
@@ -41,7 +38,7 @@ class RKParallelAdaptiveStepsizeSolver(ParallelAdaptiveStepsizeSolver):
         y_steps = torch.concatenate(
             [
                 torch.concatenate(
-                    [torch.tensor([y[0]]), y_steps[:-1,-1]]
+                    [torch.tensor([y[0]], device=self.device), y_steps[:-1,-1]]
                 ).unsqueeze(1),
                 y_steps
             ],
