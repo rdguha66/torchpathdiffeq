@@ -1,8 +1,11 @@
 import torch
 
-from torchpathdiffeq.runge_kutta import RKParallelAdaptiveStepsizeSolver
-
-integrator_list = [RKParallelAdaptiveStepsizeSolver]
+from torchpathdiffeq import\
+    steps,\
+    get_parallel_RK_solver,\
+    SerialAdaptiveStepsizeSolver,\
+    UNIFORM_METHODS,\
+    VARIABLE_METHODS\
 
 def identity(t):
     return 1
@@ -58,17 +61,23 @@ ODE_dict = {
 
 def test_integrals():
     cutoff = 0.05
+    atol = 1e-5
+    rtol=1e-5
     t_init = 0.
     t_final = 1.
-    integrator = RKParallelAdaptiveStepsizeSolver(
-        solver='euler', atol=1e-7, rtol=1e-7, remove_cut=0.105
+    loop_items = zip(
+        ['Uniform', 'Variable'],
+        [UNIFORM_METHODS, VARIABLE_METHODS],
+        [steps.ADAPTIVE_UNIFORM, steps.ADAPTIVE_VARIABLE]
     )
-    for name, (ode, solution) in ODE_dict.items():
-        integral_output = integrator.integrate(ode, t_init=t_init, t_final=t_final)
-        correct = solution(t_init=t_init, t_final=t_final)
-        error_string = f"Failed to properly integrate {name}, calculated {integral_output.integral} but expected {correct}"
-
-        assert torch.abs(integral_output.integral - correct)/correct < cutoff, error_string
-        #print(name, integral_output.h.shape)
-
-#test_integrals()
+    for sampling_name, sampling, sampling_type in loop_items:
+        for method in sampling.keys():
+            parallel_integrator = get_parallel_RK_solver(
+                sampling_type, method='adaptive_heun', atol=atol, rtol=rtol, remove_cut=0.1
+            )
+            for name, (ode, solution) in ODE_dict.items():
+                integral_output = parallel_integrator.integrate(ode, t_init=t_init, t_final=t_final)
+                correct = solution(t_init=t_init, t_final=t_final)
+                
+                error_string = f"{sampling_name} {method} failed to properly integrate {name}, calculated {integral_output.integral} but expected {correct}"
+                assert torch.abs(integral_output.integral - correct)/correct < cutoff, error_string
