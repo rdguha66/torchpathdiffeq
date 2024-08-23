@@ -2,8 +2,8 @@ import time
 import torch
 from einops import rearrange
 
-from .methods import UNIFORM_METHODS, VARIABLE_METHODS
-from .base import SolverBase, IntegralOutput
+from .methods import _get_method, UNIFORM_METHODS, VARIABLE_METHODS
+from .base import SolverBase, IntegralOutput, steps
 
 class ParallelAdaptiveStepsizeSolver(SolverBase):
     def __init__(self, remove_cut=0.1, use_absolute_error_ratio=True, *args, **kwargs):
@@ -27,11 +27,12 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
         self.previous_t = None
         self.previous_ode_fxn = None
 
+
     def _initial_t_steps(
             self,
             t,
-            t_init=torch.tensor([0], dtype=torch.float64),
-            t_final=torch.tensor([1], dtype=torch.float64)
+            t_init=None,
+            t_final=None
         ):
         """
         Creates an initial time sampling tensor either from scratch or from a
@@ -80,8 +81,8 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
             self,
             ode_fxn,
             t,
-            t_init=torch.tensor([0], dtype=torch.float64),
-            t_final=torch.tensor([1], dtype=torch.float64),
+            t_init=None,
+            t_final=None,
             ode_args=()
         ):
         """
@@ -142,8 +143,8 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
             y=None,
             t=None,
             error_ratios=None,
-            t_init=torch.tensor([0], dtype=torch.float64),
-            t_final=torch.tensor([1], dtype=torch.float64),
+            t_init=None,
+            t_final=None,
             ode_args=()
         ):
         """
@@ -172,6 +173,8 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
         Notes:
             ode_fxn takes as input (t, *args)
         """
+        _, t_init, t_final, _ = self._check_variables(t_init=t_init, t_final=t_final)
+
         if y is None or t is None or error_ratios is None:
             return self._add_initial_y(ode_fxn=ode_fxn, ode_args=ode_args, t=t, t_init=t_init, t_final=t_final)
 
@@ -194,10 +197,14 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
         y_combined = torch.zeros(
             (len(y)+len(y_add), nm1_c+1, y_add.shape[-1]),
             dtype=torch.float64,
-            requires_grad=False
+            requires_grad=False,
+            device=self.device
         ).detach()
         t_combined = torch.zeros_like(
-            y_combined, dtype=torch.float64, requires_grad=False
+            y_combined,
+            dtype=torch.float64,
+            requires_grad=False,
+            device=self.device
         ).detach()
         
         # Add old t and y values, skipping regions with new points
@@ -209,9 +216,13 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
         t_combined[idx_input,:] = t
 
         # Add new t and y values to added rows
-        idxs_add_offset = idxs_add + torch.arange(len(idxs_add))
+        idxs_add_offset = idxs_add + torch.arange(
+            len(idxs_add), device=self.device
+        )
         t_add_combined = torch.nan*torch.ones(
-            (len(idxs_add), (nm1_c+1)*2-1, d), dtype=torch.float64
+            (len(idxs_add), (nm1_c+1)*2-1, d),
+            dtype=torch.float64,
+            device=self.device
         )
         t_add_combined[:,torch.arange(nm1_c+1)*2] = t[idxs_add]
         t_add_combined[:,torch.arange(nm1_c)*2+1] = t_steps_add
@@ -219,7 +230,9 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
         t_combined[idxs_add_offset+1,:,:] = t_add_combined[:,nm1_c:]
 
         y_add_combined = torch.nan*torch.ones(
-            (len(idxs_add), (nm1_c+1)*2-1, d), dtype=torch.float64
+            (len(idxs_add), (nm1_c+1)*2-1, d),
+            dtype=torch.float64,
+            device=self.device
         )
         y_add_combined[:,torch.arange(nm1_c+1)*2] = y[idxs_add]
         y_add_combined[:,torch.arange(nm1_c)*2+1] = y_add
@@ -390,8 +403,8 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
             ode_fxn=None,
             y0=None,
             t=None,
-            t_init=torch.tensor([0], dtype=torch.float64),
-            t_final=torch.tensor([1], dtype=torch.float64),
+            t_init=None,
+            t_final=None,
             ode_args=(),
             verbose=False,
             verbose_speed=False
@@ -426,9 +439,9 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
             of integration will remain [t[0], t[-1]]. If t is 2 dimensional the 
             intermediate time points will be calculated.
         """
-
-        ode_fxn = self.ode_fxn if ode_fxn is None else ode_fxn
-        y0 = self.y0 if y0 is None else y0
+        ode_fxn, t_init, t_final, y0 = self._check_variables(
+            ode_fxn, t_init, t_final, y0
+        )
         assert ode_fxn is not None, "Must specify ode_fxn or pass it during class initialization."
         assert len(ode_fxn(torch.tensor([[t_init]]), *ode_args).shape) >= 2
         
@@ -502,15 +515,15 @@ class ParallelUniformAdaptiveStepsizeSolver(ParallelAdaptiveStepsizeSolver):
         super().__init__(*args, **kwargs)
         error_message = f"Cannot find method '{self.method_name}' in supported method: {list(UNIFORM_METHODS.keys())}"
         assert self.method_name in UNIFORM_METHODS, error_message
-        self.method = UNIFORM_METHODS[self.method_name]
+        self.method = _get_method(steps.ADAPTIVE_UNIFORM, self.method_name, self.device)# UNIFORM_METHODS[self.method_name].to(self.device)
         self.C = self.method.order
         self.Cm1 = self.C - 1
  
 
     def _initial_t_steps(self,
             t,
-            t_init=torch.tensor([0.], dtype=torch.float64),
-            t_final=torch.tensor([1.], dtype=torch.float64)
+            t_init=None,
+            t_final=None
         ):
         """
         Creates an initial time sampling tensor either from scratch or from a
@@ -524,13 +537,16 @@ class ParallelUniformAdaptiveStepsizeSolver(ParallelAdaptiveStepsizeSolver):
         
         Shapes:
             t : [N, T] will populate intermediate evaluations according to
-                integration method, [N, C, T] will retun t
+                integration method, [N, C, T] will return t
             t_init: [T]
             t_final: [T]
         """
         
+        _, t_init, t_final, _ = self._check_variables(
+            None, t_init, t_final, None
+        )
         if t is None:
-            t = torch.linspace(0, 1., 7).unsqueeze(-1)
+            t = torch.linspace(0, 1., 7, device=self.device).unsqueeze(-1)
             t = t_init + t*(t_final - t_init)
         elif len(t.shape) == 3:
             return t
@@ -591,8 +607,8 @@ class ParallelVariableAdaptiveStepsizeSolver(ParallelAdaptiveStepsizeSolver):
     def _initial_t_steps(
             self,
             t,             
-            t_init=torch.tensor([0.], dtype=torch.float64),
-            t_final=torch.tensor([1.], dtype=torch.float64)
+            t_init=None,
+            t_final=None
         ):
         """
         Creates an initial time sampling tensor either from scratch or from a
@@ -611,6 +627,9 @@ class ParallelVariableAdaptiveStepsizeSolver(ParallelAdaptiveStepsizeSolver):
             t_final: [T]
         """
  
+        _, t_init, t_final, _ = self._check_variables(
+            t_init=t_init, t_final=t_final
+        )
         if t is None:
             t = torch.linspace(0, 1., 7*self.Cm1+1).unsqueeze(-1)
             t = t_init + t*(t_final - t_init)

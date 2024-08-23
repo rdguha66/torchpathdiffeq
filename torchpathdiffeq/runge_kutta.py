@@ -8,7 +8,7 @@ def _RK_integral(
         t, 
         y, 
         tableau_b, 
-        y0=torch.tensor([0], dtype=torch.float64),
+        y0,
         verbose=False
     ):
     """
@@ -44,7 +44,7 @@ class RKParallelUniformAdaptiveStepsizeSolver(ParallelUniformAdaptiveStepsizeSol
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def _calculate_integral(self, t, y, y0=0):
+    def _calculate_integral(self, t, y, y0):
         """
         Internal Runge-Kutta (RK) integration method, carries out the RK method
         on the given time (t) and ode_fxn evaluation points (y).
@@ -99,7 +99,7 @@ class RKParallelVariableAdaptiveStepsizeSolver(ParallelVariableAdaptiveStepsizeS
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def _calculate_integral(self, t, y, y0=0):
+    def _calculate_integral(self, t, y, y0):
         """
         Internal Runge-Kutta (RK) integration method, carries out the RK method
         on the given time (t) and ode_fxn evaluation points (y).

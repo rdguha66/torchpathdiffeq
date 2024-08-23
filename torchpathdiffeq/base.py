@@ -58,10 +58,27 @@ class SolverBase():
         self.atol = atol
         self.rtol = rtol
         self.ode_fxn = ode_fxn
-        self.y0 = y0
-        self.t_init = t_init
-        self.t_final = t_final
+        self.y0 = y0.to(device)
+        self.t_init = t_init.to(device)
+        self.t_final = t_final.to(device)
         self.device = device
+
+
+    def _check_variables(self, ode_fxn=None, t_init=None, t_final=None, y0=None):
+        """ Replaces missing values with defaults on correct device """
+        ode_fxn = self.ode_fxn if ode_fxn is None else ode_fxn
+        t_init = self.t_init if t_init is None else t_init
+        t_final = self.t_final if t_final is None else t_final
+        y0 = self.y0 if y0 is None else y0
+
+        if t_init is not None:
+            t_init = t_init.to(torch.float64).to(self.device)
+        if t_final is not None:
+            t_final = t_final.to(torch.float64).to(self.device)
+        if y0 is not None:
+            y0 = y0.to(torch.float64).to(self.device)
+        return ode_fxn, t_init, t_final, y0
+
 
     def _calculate_integral(self, t, y, y0=torch.tensor([0], dtype=torch.float64)):
         """

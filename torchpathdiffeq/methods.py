@@ -2,6 +2,8 @@ from typing import Any
 import torch
 from dataclasses import dataclass
 
+from .base import steps
+
 @dataclass
 class _Tableau():
     c: torch.Tensor
@@ -13,6 +15,12 @@ class MethodClass():
     order: int
     tableau: _Tableau
 
+def _tableau_to_device(tableau, device):
+    tableau.c = tableau.c.to(device) 
+    tableau.b = tableau.b.to(device) 
+    tableau.b_error = tableau.b_error.to(device)
+
+    return tableau
 
 _ADAPTIVE_HEUN = MethodClass(
     order = 2,
@@ -96,7 +104,7 @@ class _VARIABLE_SECOND_ORDER():
     
     def __init__(self, device=None) -> None:
         self.device = device
-        self.tableau = _ADAPTIVE_HEUN.tableau
+        self.tableau = _tableau_to_device(_ADAPTIVE_HEUN.tableau, self.device)
     
     def tableau_b(self, c):
         b = self.tableau.b
@@ -110,6 +118,7 @@ class _VARIABLE_THIRD_ORDER():
     
     def __init__(self, device=None) -> None:
         self.device = device
+        self.b_delta = torch.tensor([[0.5, 0.0, 0.5]], device=self.device) 
     
     def _b0(self, a):
         return 0.5 - 1./(6*a)
@@ -137,7 +146,7 @@ class _VARIABLE_THIRD_ORDER():
 
         a = c[:,1,0]
         b = torch.stack([self._b0(a), self._ba(a), self._b1(a)]).transpose(0,1)
-        b_error = b - torch.tensor([[0.5, 0.0, 0.5]])
+        b_error = b - self.b_delta
         
         return b, b_error
 
@@ -145,3 +154,13 @@ VARIABLE_METHODS = {
     'adaptive_heun' : _VARIABLE_SECOND_ORDER,
     'generic3' : _VARIABLE_THIRD_ORDER
 }
+
+
+def _get_method(sampling_type, method_name, device):
+    if sampling_type == steps.ADAPTIVE_UNIFORM:
+        method = UNIFORM_METHODS[method_name]
+        method.tableau = _tableau_to_device(method.tableau, device) 
+    else:
+        method = VARIABLE_METHODS[method_name](device)
+    
+    return method
