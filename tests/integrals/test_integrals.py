@@ -63,8 +63,8 @@ def test_integrals():
     cutoff = 0.05
     atol = 1e-5
     rtol=1e-5
-    t_init = 0.
-    t_final = 1.
+    t_init = torch.tensor([0], dtype=torch.float64)
+    t_final = torch.tensor([1], dtype=torch.float64)
     loop_items = zip(
         ['Uniform', 'Variable'],
         [UNIFORM_METHODS, VARIABLE_METHODS],

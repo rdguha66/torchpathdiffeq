@@ -17,7 +17,7 @@ def test_ode_path_integral_fxn():
             sampling='uniform',
             atol=atol,
             rtol=rtol,
-            y0=0,
+            y0=torch.tensor([0], dtype=torch.float64),
             t=None,
         )
 
@@ -48,7 +48,7 @@ def test_ode_path_integral_fxn():
             sampling='variable',
             atol=atol,
             rtol=rtol,
-            y0=0,
+            y0=torch.tensor([0], dtype=torch.float64),
             t=None,
         )
 
