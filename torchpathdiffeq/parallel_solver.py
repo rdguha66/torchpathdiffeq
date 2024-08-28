@@ -173,6 +173,7 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
         Notes:
             ode_fxn takes as input (t, *args)
         """
+        # Get variables or populate with default values, send to correct device
         _, t_init, t_final, _ = self._check_variables(t_init=t_init, t_final=t_final)
 
         if y is None or t is None or error_ratios is None:
@@ -439,11 +440,19 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
             of integration will remain [t[0], t[-1]]. If t is 2 dimensional the 
             intermediate time points will be calculated.
         """
+        # Get variables or populate with default values, send to correct device
         ode_fxn, t_init, t_final, y0 = self._check_variables(
             ode_fxn, t_init, t_final, y0
         )
+
+        # Make sure ode_fxn exists and provides the correct output
         assert ode_fxn is not None, "Must specify ode_fxn or pass it during class initialization."
-        assert len(ode_fxn(torch.tensor([[t_init]]), *ode_args).shape) >= 2
+        test_output = ode_fxn(
+            torch.tensor([[t_init]], dtype=torch.float64, device=self.device),
+            *ode_args
+        ) 
+        assert len(test_output.shape) >= 2
+        del test_output
         
         if t is None:
             same_fxn = self.previous_ode_fxn != ode_fxn.__name__
@@ -542,6 +551,7 @@ class ParallelUniformAdaptiveStepsizeSolver(ParallelAdaptiveStepsizeSolver):
             t_final: [T]
         """
         
+        # Get variables or populate with default values, send to correct device
         _, t_init, t_final, _ = self._check_variables(
             None, t_init, t_final, None
         )
@@ -627,6 +637,7 @@ class ParallelVariableAdaptiveStepsizeSolver(ParallelAdaptiveStepsizeSolver):
             t_final: [T]
         """
  
+        # Get variables or populate with default values, send to correct device
         _, t_init, t_final, _ = self._check_variables(
             t_init=t_init, t_final=t_final
         )

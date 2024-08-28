@@ -17,7 +17,8 @@ def ode_path_integral(
         t_final=torch.tensor([1], dtype=torch.float64),
         y0=torch.tensor([0], dtype=torch.float64),
         remove_cut=0.1,
-        use_absolute_error_ratio=True
+        use_absolute_error_ratio=True,
+        device='cpu'
     ):
     """
     Integrate ode_fxn over either over t or from t_init to t_final. This
@@ -46,6 +47,7 @@ def ode_path_integral(
         use_absolute_error_ratio (bool): Use the total integration value when
             calulating the error ratio for adding or removing points, otherwise
             use integral value up to the time step being evaluated
+        device (str): Name of the device to run the integration on
     
     Shapes:
         t: [N, C, T] or [N, T] for parallel integration, [N, T] for serial
@@ -83,7 +85,8 @@ def ode_path_integral(
             remove_cut=remove_cut,
             t_init=t_init,
             t_final=t_final,
-            use_absolute_error_ratio=use_absolute_error_ratio
+            use_absolute_error_ratio=use_absolute_error_ratio,
+            device=device
         )
     elif computation.lower() == 'serial':
         integrator = SerialAdaptiveStepsizeSolver(
@@ -93,7 +96,7 @@ def ode_path_integral(
             ode_fxn=ode_fxn,
             t_init=t_init,
             t_final=t_final,
-            use_absolute_error_ratio=use_absolute_error_ratio
+            device=device
         )
     else:
         raise ValueError(f"Path integral computation type must be 'parallel' or 'serial', not {computation}.")
