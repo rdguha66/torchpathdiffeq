@@ -78,9 +78,9 @@ def test_ode_path_integral_fxn():
         assert_allclose(OPI_integral.error_ratios, RK_integral.error_ratios)
     
     
-    ##############################
-    #####  Parallel Uniform  #####
-    ##############################
+    ####################
+    #####  Serial  #####
+    ####################
     for method in ['adaptive_heun', 'fehlberg2', 'bosh3', 'rk4', 'dopri5']:
     
         OPI_integral = ode_path_integral(
