@@ -65,8 +65,8 @@ class RKParallelUniformAdaptiveStepsizeSolver(ParallelUniformAdaptiveStepsizeSol
         return MethodOutput(
             integral=integral,
             integral_error=integral_error,
-            sum_steps=RK_steps,
-            sum_step_errors=step_errors,
+            sum_steps=RK_steps.detach(),
+            sum_step_errors=step_errors.detach(),
             h=h
         )
     

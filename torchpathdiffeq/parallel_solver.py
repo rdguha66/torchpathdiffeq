@@ -751,7 +751,7 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
                 error_ratios, error_ratios_2steps = self._compute_error_ratios(
                     sum_step_errors=method_output.sum_step_errors,
                     sum_steps=method_output.sum_steps,
-                    integral=method_output.integral
+                    integral=method_output.integral.detach()
                 )
                 if verbose_speed: print("\t calculate errors", time.time() - t0)
                 assert len(y) == len(error_ratios)
