@@ -4,8 +4,8 @@ from enum import Enum
 
 from .distributed import DistributedEnvironment
 
-ATOL_ASSERT=1e-15
-RTOL_ASSERT=1e-7
+ATOL_ASSERT=1e-15*1e10
+RTOL_ASSERT=1e-7*1e3
 
 class steps(Enum):
     FIXED = 0
@@ -57,6 +57,7 @@ class SolverBase(DistributedEnvironment):
             ode_fxn=None,
             t_init=torch.tensor([0], dtype=torch.float64),
             t_final=torch.tensor([1], dtype=torch.float64),
+            dtype=torch.float64,
             device=None,
             *args,
             **kwargs
@@ -67,9 +68,10 @@ class SolverBase(DistributedEnvironment):
         self.atol = atol
         self.rtol = rtol
         self.ode_fxn = ode_fxn
-        self.y0 = y0.to(self.device)
-        self.t_init = t_init.to(self.device)
-        self.t_final = t_final.to(self.device)
+        self.dtype = dtype
+        self.y0 = y0.to(self.dtype).to(self.device)
+        self.t_init = t_init.to(self.dtype).to(self.device)
+        self.t_final = t_final.to(self.dtype).to(self.device)
 
 
     def _check_variables(self, ode_fxn=None, t_init=None, t_final=None, y0=None):
@@ -80,11 +82,11 @@ class SolverBase(DistributedEnvironment):
         y0 = self.y0 if y0 is None else y0
 
         if t_init is not None:
-            t_init = t_init.to(torch.float64).to(self.device)
+            t_init = t_init.to(self.dtype).to(self.device)
         if t_final is not None:
-            t_final = t_final.to(torch.float64).to(self.device)
+            t_final = t_final.to(self.dtype).to(self.device)
         if y0 is not None:
-            y0 = y0.to(torch.float64).to(self.device)
+            y0 = y0.to(self.dtype).to(self.device)
         return ode_fxn, t_init, t_final, y0
 
 

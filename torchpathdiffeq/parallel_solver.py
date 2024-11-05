@@ -91,7 +91,7 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
                 t = t.unsqueeze(-1)
             t_steps = self._initial_t_steps(
                 t, t_init=t_init, t_final=t_final
-            ).to(torch.float64)
+            ).to(self.dtype)
             N, C, _ = t_steps.shape
 
             # Time points to evaluate, remove repetitive time points at the end
@@ -118,7 +118,7 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
                 print(t.shape)
             t = self._initial_t_steps(
                 t, t_init=t_init, t_final=t_final
-            ).to(torch.float64)
+            ).to(self.dtype)
 
         if inforce_endpoints:
             if t_init != t[0,0]:
@@ -130,7 +130,7 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
                     inp = inp.unsqueeze(-1)
                 t[0] = self._initial_t_steps(
                     inp, t_init=t_init, t_final=t_final
-                ).to(torch.float64)
+                ).to(self.dtype)
             if t_final != t[-1,-1]:
                 # Remove time steps where last point is greater than t_final
                 t = t[t[:,0,0] < t_final[0]]
@@ -140,7 +140,7 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
                     inp = inp.unsqueeze(-1)
                 t[-1] = self._initial_t_steps(
                     inp, t_init=t_init, t_final=t_final
-                ).to(torch.float64)
+                ).to(self.dtype)
         return t
 
 
@@ -190,7 +190,7 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
             dim=0
         )
         # Calculate new geometries
-        y_add = ode_fxn(t_add, *ode_args).to(torch.float64)
+        y_add = ode_fxn(t_add, *ode_args).to(self.dtype)
 
         # Add repetitive y values to the end of each integration step
         y_steps = torch.reshape(y_add[1:], (N, C-1, T))
@@ -295,13 +295,13 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
         # Create new vector to fill with old and new values
         y_combined = torch.zeros(
             (len(y)+n_add, self.Cm1+1, y_add.shape[-1]),
-            dtype=torch.float64,
+            dtype=self.dtype,
             requires_grad=False,
             device=self.device
         ).detach()
         t_combined = torch.zeros_like(
             y_combined,
-            dtype=torch.float64,
+            dtype=self.dtype,
             requires_grad=False,
             device=self.device
         ).detach()
@@ -619,6 +619,8 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
             intermediate time points will be calculated.
         """
         # If t is given it must be consistent with given t_init and t_final
+        t_init = t_init if t_init is None else t_init.to(self.dtype)
+        t_final = t_final if t_final is None else t_final.to(self.dtype)
         if t is not None:
             if len(t.shape) == 2:
                 assert torch.all(t[1:] + ATOL_ASSERT > t[:-1])
@@ -649,7 +651,7 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
         # Make sure ode_fxn exists and provides the correct output
         assert ode_fxn is not None, "Must specify ode_fxn or pass it during class initialization."
         test_output = ode_fxn(
-            torch.tensor([[t_init]], dtype=torch.float64, device=self.device),
+            torch.tensor([[t_init]], dtype=self.dtype, device=self.device),
             *ode_args
         ) 
         assert len(test_output.shape) >= 2
@@ -1032,7 +1034,7 @@ class ParallelVariableAdaptiveStepsizeSolver(ParallelAdaptiveStepsizeSolver):
         select_add_idxs[select_add_idxs>=self.C] += 1
         t_add_combined = torch.nan*torch.ones(
             (len(idxs_add), (self.C)*2, D),
-            dtype=torch.float64,
+            dtype=self.dtype,
             device=self.device
         )
         t_add_combined[:,select_prev_idxs] = t[idxs_add]
@@ -1045,7 +1047,7 @@ class ParallelVariableAdaptiveStepsizeSolver(ParallelAdaptiveStepsizeSolver):
         #print("IDXS", select_prev_idxs, select_add_idxs)
         y_add_combined = torch.nan*torch.ones(
             (len(idxs_add), self.C*2, D),
-            dtype=torch.float64,
+            dtype=self.dtype,
             device=self.device
         )
         #print("SHAPES",y.shape, y_add.shape)
@@ -1172,13 +1174,13 @@ class ParallelVariableAdaptiveStepsizeSolver(ParallelAdaptiveStepsizeSolver):
         # Create new vector to fill with old and new values
         y_combined = torch.zeros(
             (len(y)+len(y_add), self.Cm1+1, y_add.shape[-1]),
-            dtype=torch.float64,
+            dtype=self.dtype,
             requires_grad=False,
             device=self.device
         ).detach()
         t_combined = torch.zeros_like(
             y_combined,
-            dtype=torch.float64,
+            dtype=self.dtype,
             requires_grad=False,
             device=self.device
         ).detach()
@@ -1197,7 +1199,7 @@ class ParallelVariableAdaptiveStepsizeSolver(ParallelAdaptiveStepsizeSolver):
         )
         t_add_combined = torch.nan*torch.ones(
             (len(idxs_add), (self.Cm1+1)*2-1, d),
-            dtype=torch.float64,
+            dtype=self.dtype,
             device=self.device
         )
         t_add_combined[:,torch.arange(self.Cm1+1)*2] = t[idxs_add]
@@ -1207,7 +1209,7 @@ class ParallelVariableAdaptiveStepsizeSolver(ParallelAdaptiveStepsizeSolver):
 
         y_add_combined = torch.nan*torch.ones(
             (len(idxs_add), (self.Cm1+1)*2-1, d),
-            dtype=torch.float64,
+            dtype=torch.self.dtype,
             device=self.device
         )
         y_add_combined[:,torch.arange(self.Cm1+1)*2] = y[idxs_add]
