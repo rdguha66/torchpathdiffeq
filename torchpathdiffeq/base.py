@@ -4,9 +4,6 @@ from enum import Enum
 
 from .distributed import DistributedEnvironment
 
-ATOL_ASSERT=1e-15*1e10
-RTOL_ASSERT=1e-7*1e3
-
 class steps(Enum):
     FIXED = 0
     ADAPTIVE_UNIFORM = 1
@@ -58,6 +55,7 @@ class SolverBase(DistributedEnvironment):
             t_init=torch.tensor([0], dtype=torch.float64),
             t_final=torch.tensor([1], dtype=torch.float64),
             dtype=torch.float64,
+            eval=False,
             device=None,
             *args,
             **kwargs
@@ -72,6 +70,19 @@ class SolverBase(DistributedEnvironment):
         self.y0 = y0.to(self.dtype).to(self.device)
         self.t_init = t_init.to(self.dtype).to(self.device)
         self.t_final = t_final.to(self.dtype).to(self.device)
+        self.training = not eval
+
+        if self.dtype == torch.float64:
+            self.atol_assert = 1e-15
+            self.rtol_assert = 1e-7
+        elif self.dtype == torch.float32:
+            self.atol_assert = 1e-7
+            self.rtol_assert = 1e-5
+        elif self.dtype == torch.float16:
+            self.atol_assert = 1e-3
+            self.rtol_assert = 1e-1
+        else:
+            raise ValueError("Given dtype must be torch.float64 or torch.float32")
 
 
     def _check_variables(self, ode_fxn=None, t_init=None, t_final=None, y0=None):
@@ -88,6 +99,12 @@ class SolverBase(DistributedEnvironment):
         if y0 is not None:
             y0 = y0.to(self.dtype).to(self.device)
         return ode_fxn, t_init, t_final, y0
+
+    def train(self):
+        self.training = True
+    
+    def eval(self):
+        self.training = False
 
 
     def _calculate_integral(self, t, y, y0=torch.tensor([0], dtype=torch.float64)):
