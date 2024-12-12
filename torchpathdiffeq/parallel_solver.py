@@ -142,7 +142,6 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
                     inp, t_init=t_init, t_final=t_final
                 ).to(self.dtype)
         
-        t = t.requires_grad_(self.training)
         return t
 
 
@@ -643,8 +642,6 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
                 t_final = t[-1,-1]
             else:
                 assert torch.allclose(t[-1,-1], t_final, atol=self.atol_assert, rtol=self.rtol_assert)
-            if self.training:
-                t = t.requires_grad_(True)
         
         # Get variables or populate with default values, send to correct device
         ode_fxn, t_init, t_final, y0 = self._check_variables(
