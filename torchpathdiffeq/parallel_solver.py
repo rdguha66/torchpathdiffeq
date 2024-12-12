@@ -793,7 +793,6 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
                         loss=loss
                     )
                     # If batching, take the gradient and free memory
-                    print("Y T SHAPES", max_batch, y.shape, t.shape)
                     if max_batch is not None:
                         if loss.requires_grad:
                             loss.backward()
