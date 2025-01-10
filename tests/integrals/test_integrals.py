@@ -113,8 +113,8 @@ def test_integrals():
                     t_pruned_flat = torch.flatten(integral_output.t_pruned, start_dim=0, end_dim=1)
                     assert torch.all(t_flat[1:] - t_flat[0:-1] >= 0)
                     assert torch.all(t_pruned_flat[1:] - t_pruned_flat[0:-1] >= 0)
-                    assert np.allclose(integral_output.t[1:,0,:], integral_output.t[:-1,-1,:])
-                    assert np.allclose(integral_output.t_pruned[1:,0,:], integral_output.t_pruned[:-1,-1,:])
+                    assert torch.allclose(integral_output.t[1:,0,:], integral_output.t[:-1,-1,:])
+                    assert torch.allclose(integral_output.t_pruned[1:,0,:], integral_output.t_pruned[:-1,-1,:])
                     
                     
                     if max_batch is None:
