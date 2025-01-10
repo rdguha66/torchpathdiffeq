@@ -524,55 +524,59 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
         
         return error_ratio, error_ratio_2steps
     
-    def _record_results(self, record, is_batched, method_output, t, t_pruned, y, error_ratios, loss):
+    def _record_results(self, record, is_batched, results):
         if len(record) == 0 and not is_batched:
-            record['integral'] = method_output.integral
-            record['t_pruned'] = t_pruned
-            record['t'] = t
-            record['h'] = method_output.h
-            record['y'] = y
-            record['sum_steps'] = method_output.sum_steps
-            record['sum_step_errors'] = method_output.sum_step_errors
-            record['integral_error'] = method_output.integral_error
-            record['error_ratios'] = error_ratios
-            record['loss'] = loss
+            record['integral'] = results.integral
+            record['t_pruned'] = results.t_pruned
+            record['t'] = results.t
+            record['h'] = results.h
+            record['y'] = results.y
+            record['sum_steps'] = results.sum_steps
+            record['sum_step_errors'] = results.sum_step_errors
+            record['integral_error'] = results.integral_error
+            record['error_ratios'] = results.error_ratios
+            record['loss'] = results.loss
             return record
         elif len(record) == 0 and is_batched:
-            record['integral'] = method_output.integral.detach()
-            record['t_pruned'] = t_pruned.detach()
-            record['t'] = t.detach()
-            record['h'] = method_output.h.detach()
-            record['y'] = y.detach()
-            record['sum_steps'] = method_output.sum_steps.detach()
-            record['sum_step_errors'] = method_output.sum_step_errors.detach()
-            record['integral_error'] = method_output.integral_error.detach()
-            record['error_ratios'] = error_ratios.detach()
-            record['loss'] = loss.detach()
+            record['integral'] = results.integral.detach()
+            record['t_pruned'] = results.t_pruned.detach()
+            record['t'] = results.t.detach()
+            record['h'] = results.h.detach()
+            record['y'] = results.y.detach()
+            record['sum_steps'] = results.sum_steps.detach()
+            record['sum_step_errors'] = results.sum_step_errors.detach()
+            record['integral_error'] = results.integral_error.detach()
+            record['error_ratios'] = results.error_ratios.detach()
+            record['loss'] = results.loss.detach()
             return record 
 
         record['integral'] = record['integral']\
-            + method_output.integral.detach()
+            + results.integral.detach()
         record['t_pruned'] = torch.concatenate(
-            [record['t_pruned'], t_pruned.detach()], dim=0
+            [record['t_pruned'], results.t_pruned.detach()], dim=0
         )
-        record['t'] = torch.concatenate([record['t'], t.detach()], dim=0)
+        record['t'] = torch.concatenate(
+            [record['t'], results.t.detach()], dim=0
+        )
         record['h'] = torch.concatenate(
-            [record['h'], method_output.h.detach()], dim=0
+            [record['h'], results.h.detach()], dim=0
         )
-        record['y'] = torch.concatenate([record['y'], y.detach()], dim=0)
+        record['y'] = torch.concatenate(
+            [record['y'], results.y.detach()], dim=0
+        )
         record['sum_steps'] = torch.concatenate(
-            [record['sum_steps'], method_output.sum_steps.detach()], dim=0
+            [record['sum_steps'], results.sum_steps.detach()], dim=0
         )
         record['sum_step_errors'] = torch.concatenate(
-            [record['sum_step_errors'], method_output.sum_step_errors.detach()],
+            [record['sum_step_errors'], results.sum_step_errors.detach()],
             dim=0
         )
         record['integral_error'] = record['integral_error']\
-            + method_output.integral_error.detach()
+            + results.integral_error.detach()
         record['error_ratios'] = torch.concatenate(
-            [record['error_ratios'], error_ratios.detach()], dim=0
+            [record['error_ratios'], results.error_ratios.detach()], dim=0
         )
-        record['loss'] = record['loss'] + loss.detach()
+        record['loss'] = record['loss'] + results.loss.detach()
 
         return record
 
@@ -765,44 +769,67 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
                 
                 t0 = time.time()
                 #print("end inner while", y.shape, t.shape)
-                # Actions to perform once integral range is within tolerance
-                if torch.all(error_ratios <= 1.):
-                    # Create mask for remove points that are too close
-                    t_pruned = self.remove_excess_y(t, error_ratios_2steps)
-                    t_flat = torch.flatten(t, start_dim=0, end_dim=1)
-                    assert torch.all(t_flat[1:] - t_flat[:-1] + self.atol_assert >= 0)
-                    # Calculate loss
-                    loss = loss_fxn(
-                        integral=method_output.integral,
-                        t=t,
-                        h=method_output.h,
-                        sum_steps=method_output.sum_steps,
-                        integral_error=method_output.integral_error,
-                        errors=torch.abs(method_output.sum_step_errors),
-                        error_ratios=error_ratios
-                    )
-                    # Add results to record
-                    record = self._record_results(
-                        record=record,
-                        is_batched=max_batch is not None,
-                        method_output=method_output,
-                        t=t,
-                        t_pruned=t_pruned,
-                        y=y,
-                        error_ratios=error_ratios,
-                        loss=loss
-                    )
-                    # If batching, take the gradient and free memory
-                    if max_batch is not None:
-                        if loss.requires_grad:
-                            loss.backward()
-                        del y
-                        y = None
-                    #print(t[:,:,0])
-                    #print(y[:,:,0])
-                    #print("LOSS!!!!!", loss)
                 if verbose_speed: print("\t removal mask", time.time() - t0)
                 if verbose_speed: print("\tLOOP TIME", time.time() - tl0)
+            
+            # Create mask for remove points that are too close
+            t_pruned = self.remove_excess_y(t, error_ratios_2steps)
+            t_flat = torch.flatten(t, start_dim=0, end_dim=1)
+            assert torch.all(t_flat[1:] - t_flat[:-1] + self.atol_assert >= 0)
+            intermediate_results = IntegralOutput(
+                integral=method_output.integral,
+                loss=None,
+                t_pruned=t_pruned,
+                t=t,
+                h=method_output.h,
+                y=y,
+                sum_steps=method_output.sum_steps,
+                integral_error=method_output.integral_error,
+                sum_step_errors=torch.abs(method_output.sum_step_errors),
+                error_ratios=error_ratios,
+                t_init=t_init,
+                t_final=t_final,
+                y0=y0
+            )
+
+
+            # Calculate loss
+            loss = loss_fxn(intermediate_results)
+            intermediate_results.loss = loss
+            """
+                integral=method_output.integral,
+                t=t,
+                h=method_output.h,
+                sum_steps=method_output.sum_steps,
+                integral_error=method_output.integral_error,
+                errors=torch.abs(method_output.sum_step_errors),
+                error_ratios=error_ratios
+            )
+            """
+            # Add results to record
+            record = self._record_results(
+                record=record,
+                is_batched=max_batch is not None,
+                results=intermediate_results
+            )
+            """
+                method_output=method_output,
+                t=t,
+                t_pruned=t_pruned,
+                y=y,
+                error_ratios=error_ratios,
+                loss=loss
+            )
+            """
+            # If batching, take the gradient and free memory
+            if max_batch is not None:
+                if loss.requires_grad:
+                    loss.backward()
+                del y
+                y = None
+            #print(t[:,:,0])
+            #print(y[:,:,0])
+            #print("LOSS!!!!!", loss)
 
         self.previous_ode_fxn = ode_fxn.__name__
         self.t_previous = t
@@ -815,7 +842,7 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
             y=record['y'],
             sum_steps=record['sum_steps'],
             integral_error=record['integral_error'],
-            errors=torch.abs(record['sum_step_errors']),
+            sum_step_errors=torch.abs(record['sum_step_errors']),
             error_ratios=record['error_ratios'],
         )
 

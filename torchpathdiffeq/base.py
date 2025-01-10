@@ -32,8 +32,11 @@ class IntegralOutput():
     y: torch.Tensor = None
     sum_steps: torch.Tensor = None
     integral_error: torch.Tensor = None
-    errors: torch.Tensor = None
+    sum_step_errors: torch.Tensor = None
     error_ratios: torch.Tensor = None
+    t_init: torch.Tensor = None
+    t_final: torch.Tensor = None
+    y0: torch.Tensor = None
 
 @dataclass
 class MethodOutput():
