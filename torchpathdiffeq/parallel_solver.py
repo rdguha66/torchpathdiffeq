@@ -1,3 +1,4 @@
+import psutil
 import time
 import torch
 import numpy as np
@@ -7,7 +8,7 @@ from .methods import _get_method, UNIFORM_METHODS, VARIABLE_METHODS
 from .base import SolverBase, IntegralOutput, steps
 
 class ParallelAdaptiveStepsizeSolver(SolverBase):
-    def __init__(self, remove_cut=0.1, use_absolute_error_ratio=True, max_batch=None, *args, **kwargs):
+    def __init__(self, remove_cut=0.1, use_absolute_error_ratio=True, error_calc_idx=None, *args, **kwargs):
         """
         Args:
         remove_cut (float): Cut to remove integration steps with error ratios
@@ -21,7 +22,6 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
         assert remove_cut < 1.
         self.remove_cut = remove_cut
         self.use_absolute_error_ratio = use_absolute_error_ratio
-        self.max_batch = max_batch
 
         self.method = None
         self.order = None
@@ -29,6 +29,8 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
         self.Cm1 = None
         self.previous_t = None
         self.previous_ode_fxn = None
+        self.ode_eval_unit_size = None
+        self.error_calc_idx = error_calc_idx
 
 
     def _initial_t_steps(
@@ -141,7 +143,6 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
                 t[-1] = self._initial_t_steps(
                     inp, t_init=t_init, t_final=t_final
                 ).to(self.dtype)
-        
         return t
 
 
@@ -180,7 +181,7 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
         N, C, _ = t_steps.shape
 
         """
-        N, C, T = t_steps_add.shape 
+        N, C, _ = t_steps_add.shape 
         # Time points to evaluate, remove repetitive time points at the end
         # of each step to minimize evaluations
         t_add = torch.concatenate(
@@ -192,9 +193,10 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
         )
         # Calculate new geometries
         y_add = ode_fxn(t_add, *ode_args).to(self.dtype)
+        _, D = y_add.shape
 
         # Add repetitive y values to the end of each integration step
-        y_steps = torch.reshape(y_add[1:], (N, C-1, T))
+        y_steps = torch.reshape(y_add[1:], (N, C-1, D))
         y = torch.concatenate(
             [
                 torch.concatenate(
@@ -295,13 +297,13 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
 
         # Create new vector to fill with old and new values
         y_combined = torch.zeros(
-            (len(y)+n_add, self.Cm1+1, y_add.shape[-1]),
+            (len(y)+n_add, self.Cm1+1, D),
             dtype=self.dtype,
             requires_grad=False,
             device=self.device
         ).detach()
-        t_combined = torch.zeros_like(
-            y_combined,
+        t_combined = torch.zeros(
+            (len(y)+n_add, self.Cm1+1, t.shape[-1]),
             dtype=self.dtype,
             requires_grad=False,
             device=self.device
@@ -580,6 +582,56 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
 
         return record
 
+    def _get_cpu_memory(self):
+        mem = psutil.virtual_memory()
+        free = mem.available/1024**3
+        total = mem.total/1024**3
+        return free, total
+
+    def _get_cuda_memory(self):
+        free = torch.cuda.mem_get_info()[0]/1024**3
+        total = torch.cuda.mem_get_info()[1]/1024**3
+        return free, total
+    
+    def _get_memory(self):
+        if self.device_type == 'cuda':
+            return self._get_cuda_memory()
+        else:
+            return self._get_cpu_memory()
+
+    def _setup_memory_checks(self, ode_fxn, t_test, ode_args=()):
+        assert len(t_test.shape) <= 2
+        if len(t_test.shape) == 2:
+            t_test = t_test[0]
+        t_test = t_test.unsqueeze(0)
+        self.ode_unit_mem_size = None
+        
+        N = 1
+        eval_time = 0
+        while eval_time < 0.1 and N < 1e9:
+            t0 = time.time()
+            t_input = torch.tile(t_test, (N, 1))
+            mem_before = self._get_memory()
+            if self.ode_unit_mem_size is not None:
+                if self.ode_unit_mem_size*N > mem_before[0]:
+                    return
+            result = ode_fxn(t_input, *ode_args)
+            mem_after = self._get_memory()
+            del result
+            self.ode_unit_mem_size = max(0, (mem_before[0] - mem_after[0])/float(N))
+            eval_time = time.time() - t0
+            N = 10*N
+
+    def _get_usable_memory(self, total_mem_usage): 
+        free, total = self._get_memory()
+        buffer = (1 - total_mem_usage)*total
+        return max(0, free - buffer)
+    
+    def _get_max_ode_evals(self, total_mem_usage):
+        usable = self._get_usable_memory(total_mem_usage)
+        #print("Usable", usable, int(usable//(1e-12 + self.ode_unit_mem_size)))
+        return int(usable//(1e-12 + self.ode_unit_mem_size))
+
     def integrate(
             self,
             ode_fxn=None,
@@ -588,7 +640,8 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
             t_init=None,
             t_final=None,
             ode_args=(),
-            max_batch=None,
+            take_gradient=None,
+            total_mem_usage=0.9,
             loss_fxn=None,
             verbose=False,
             verbose_speed=False,
@@ -651,6 +704,13 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
         ode_fxn, t_init, t_final, y0 = self._check_variables(
             ode_fxn, t_init, t_final, y0
         )
+        assert total_mem_usage <= 1.0 and total_mem_usage > 0,\
+            "total_mem_usage is a ratio and must be 0 < total_mem_usage <= 1"
+        same_ode_fxn = ode_fxn.__name__ == self.previous_ode_fxn
+        if not same_ode_fxn:
+            self._setup_memory_checks(ode_fxn, t_init, ode_args=ode_args)
+        assert self._get_max_ode_evals(total_mem_usage) > (2*self.Cm1 + 1),\
+            "Not enough free memory to run 2 integration steps, consider increasing total_mem_usage"
         loss_fxn = loss_fxn if loss_fxn is not None else self._integral_loss
 
         # Make sure ode_fxn exists and provides the correct output
@@ -662,23 +722,14 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
         assert len(test_output.shape) >= 2
         del test_output
         
-        if t is None:
-            same_fxn = self.previous_ode_fxn != ode_fxn.__name__
-            if self.previous_t is not None and same_fxn:
-                mask = (self.previous_t[:,0] <= t_final)\
-                    + (self.previous_t[:,0] >= t_init)
-                t = self.previous_t[mask]
+        if t is None and same_ode_fxn and self.previous_t is not None:
+            mask = (self.previous_t[:,0] <= t_final)\
+                + (self.previous_t[:,0] >= t_init)
+            t = self.previous_t[mask]
         t_steps_init = self._get_initial_t_steps(
             t, t_init, t_final, inforce_endpoints=True
         )
         t, y = None, None
-
-        batch_buffer = 0.8
-        max_batch = self.max_batch if max_batch is None else max_batch
-        if max_batch is not None:
-            assert max_batch >= 2*self.Cm1 + 1, f"max_batch ({max_batch}) must be >= to the number of samples in two integration steps ({2*self.Cm1 + 1})"
-            max_steps = (max_batch - 1)//self.Cm1
-            batch_size = int(max_steps*batch_buffer)
 
         record = {}
         while t is None or torch.all(t[-1,-1] != t_final):
@@ -690,7 +741,8 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
             t_steps = self._get_initial_t_steps(
                 t_steps_init, _t_init, t_final, inforce_endpoints=True
             )
-            t_steps = t_steps if max_batch is None else t_steps[:batch_size]
+            max_steps = int(0.8*self._get_max_ode_evals(total_mem_usage)//self.C)
+            t_steps = t_steps[:min(len(t_steps), max_steps)]
             #print("INIT TADD PORTION", t_add.shape, t_steps.shape)
             #print("TADD INIT", t_add[:,:,0])
             #t = None
@@ -711,17 +763,36 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
                 #)
 
                 # Determine new points to add
-                if error_ratios is not None and t is not None:
+                if error_ratios is None:
+                    idxs_add= None
+                else:
+                    idxs_add = torch.where(error_ratios > 1.)[0]
+                    if self._get_max_ode_evals(total_mem_usage) < len(idxs_add)*self.C:
+                        del y
+                        eval_counts = torch.ones(len(y), device=self.device)
+                        eval_counts[idxs_add] = 2
+                        eval_counts = self.C*torch.cumsum(eval_counts, dim=0).to(torch.int)
+                        
+                        max_steps = int(0.48*self._get_max_ode_evals(total_mem_usage))
+                        assert max_steps > 2*self.Cm1 + 1
+                        cut_idx = torch.argmin(torch.abs(eval_counts - max_steps))
+                        if eval_counts[cut_idx] > max_steps:
+                            cut_idx -= 1
+                        t = t[:cut_idx]
+                        y, t = self._add_initial_y(
+                            ode_fxn=ode_fxn, t_steps_add=t, ode_args=ode_args
+                        )
+                        idxs_add = None
+                        take_gradient = take_gradient is None or take_gradient
+                """
+                else:
                     idxs_add = torch.where(error_ratios > 1.)[0]
                     #t_add = (t[idxs_add,1:] +  t[idxs_add,:-1])/2     #[n_add, C-1, 1]
-                else:
-                    idxs_add= None
                 
-                # If unique evaluations in y exceeds max_batch after adding
-                # t_add points, remove latest time evaluations
-                if error_ratios is not None and max_batch is not None:
-                    n_next_steps = len(y) + len(idxs_add)
-                    if n_next_steps > max_steps:
+                    # If unique evaluations in y exceeds memory after adding
+                    # t_add points, remove latest time evaluations
+                    max_steps = self._get_max_ode_evals(total_mem_usage)
+                    if len(idxs_add) > max_steps:
                         #print("Removing", n_next_steps, max_steps, t.shape, t_add.shape)
                         eval_counts = torch.ones(len(y), device=self.device)
                         eval_counts[idxs_add] = 2
@@ -730,6 +801,7 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
                         t = t[eval_mask]
                         #t_add = t_add[eval_mask[idxs_add]]
                         idxs_add = idxs_add[eval_mask[idxs_add]]
+                """
 
                 #print("B4 Adding Y", t_add.shape, len(t_add))
                 #if y is not None:
@@ -755,8 +827,14 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
                 
                 # Calculate error
                 t0 = time.time()
+                if self.error_calc_idx is None:
+                    sum_step_errors = method_output.sum_step_errors
+                else:
+                    sum_step_errors =\
+                        method_output.sum_step_errors[:,self.error_calc_idx]
+                    sum_step_errors = sum_step_errors.unsqueeze(-1)
                 error_ratios, error_ratios_2steps = self._compute_error_ratios(
-                    sum_step_errors=method_output.sum_step_errors,
+                    sum_step_errors=sum_step_errors,
                     sum_steps=method_output.sum_steps,
                     integral=method_output.integral.detach()
                 )
@@ -779,13 +857,14 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
             intermediate_results = IntegralOutput(
                 integral=method_output.integral,
                 loss=None,
+                gradient_taken=take_gradient,
                 t_pruned=t_pruned,
                 t=t,
                 h=method_output.h,
                 y=y,
                 sum_steps=method_output.sum_steps,
                 integral_error=method_output.integral_error,
-                sum_step_errors=torch.abs(method_output.sum_step_errors),
+                sum_step_errors=torch.abs(sum_step_errors),
                 error_ratios=error_ratios,
                 t_init=t_init,
                 t_final=t_final,
@@ -809,7 +888,7 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
             # Add results to record
             record = self._record_results(
                 record=record,
-                is_batched=max_batch is not None,
+                is_batched=take_gradient,
                 results=intermediate_results
             )
             """
@@ -822,7 +901,7 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
             )
             """
             # If batching, take the gradient and free memory
-            if max_batch is not None:
+            if take_gradient:
                 if loss.requires_grad:
                     loss.backward()
                 del y
@@ -836,6 +915,7 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
         return IntegralOutput(
             integral=record['integral'],
             loss=record['loss'],
+            gradient_taken=take_gradient,
             t_pruned=record['t_pruned'],
             t=record['t'],
             h=record['h'],
