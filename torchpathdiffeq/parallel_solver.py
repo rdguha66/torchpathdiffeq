@@ -618,7 +618,7 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
             result = ode_fxn(t_input, *ode_args)
             mem_after = self._get_memory()
             del result
-            self.ode_unit_mem_size = max(0, (mem_before[0] - mem_after[0])/float(N))
+            self.ode_unit_mem_size = 2.1*max(0, (mem_before[0] - mem_after[0])/float(N))
             eval_time = time.time() - t0
             N = 10*N
 
@@ -767,9 +767,11 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
                     idxs_add= None
                 else:
                     idxs_add = torch.where(error_ratios > 1.)[0]
+                    #print("START ADDING INDICES", t.shape, len(idxs_add), "  |  ", self._get_max_ode_evals(total_mem_usage), len(idxs_add)*self.C)
+                    #print("MEMORY", self._get_cuda_memory(), len(idxs_add)*self.C*self.ode_unit_mem_size)
                     if self._get_max_ode_evals(total_mem_usage) < len(idxs_add)*self.C:
                         del y
-                        eval_counts = torch.ones(len(y), device=self.device)
+                        eval_counts = torch.ones(len(t), device=self.device)
                         eval_counts[idxs_add] = 2
                         eval_counts = self.C*torch.cumsum(eval_counts, dim=0).to(torch.int)
                         
@@ -784,6 +786,7 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
                         )
                         idxs_add = None
                         take_gradient = take_gradient is None or take_gradient
+
                 """
                 else:
                     idxs_add = torch.where(error_ratios > 1.)[0]
@@ -809,6 +812,7 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
                 y, t = self._adaptively_add_y(
                     ode_fxn, y, t, idxs_add, ode_args
                 )
+                #print("SECOND MEMORY", self._get_cuda_memory())
                 #print("ADDED Y (t)", y.shape)#, t[:,:,0])
                 t_flat = torch.flatten(t, start_dim=0, end_dim=1)
                 assert torch.all(t_flat[1:] - t_flat[:-1] + self.atol_assert >= 0)
