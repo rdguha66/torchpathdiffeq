@@ -27,7 +27,7 @@ class IntegralOutput():
     integral: torch.Tensor
     loss: torch.Tensor = None
     gradient_taken: bool = None
-    t_pruned: torch.Tensor = None
+    t_optimal: torch.Tensor = None
     t: torch.Tensor = None
     h: torch.Tensor = None
     y: torch.Tensor = None
@@ -130,7 +130,7 @@ class SolverBase(DistributedEnvironment):
         raise NotImplementedError
     
     def _integral_loss(self, integral, *args, **kwargs):
-        return integral
+        return integral.integral
     
     def integrate(
             self,

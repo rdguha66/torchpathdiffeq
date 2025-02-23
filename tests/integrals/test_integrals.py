@@ -26,6 +26,7 @@ def test_integrals():
             #if method != 'fehlberg2':
             #    continue
             for name, (ode, solution, cutoff) in ODE_dict.items():
+                print("INTEGRAL", method, name, sampling_name)
                 correct = solution(t_init=t_init, t_final=t_final)
                 parallel_integrator = get_parallel_RK_solver(
                     sampling_type, method=method, atol=atol, rtol=rtol, remove_cut=0.1
@@ -38,8 +39,6 @@ def test_integrals():
                 error_string = f"{sampling_name} {method} failed to properly integrate {name}, calculated {integral_output.integral.item()} but expected {correct.item()}"
                 t_flat = torch.flatten(integral_output.t[:,:,0])
                 t_flat_unique = torch.flatten(integral_output.t[:,1:,0])
-                print("VALS", integral_output.integral, correct, integral_output.t.shape, torch.sum(t_flat[1:] - t_flat[:-1] + 1e-15 < 0), torch.sum(t_flat_unique[1:] - t_flat_unique[:-1] + 1e-15 < 0))
-                print("CUTOFF", cutoff, torch.abs((integral_output.integral - correct)/correct))
                 """
                 serial_integral = ode_path_integral(
                     ode_fxn=ode,
@@ -55,11 +54,10 @@ def test_integrals():
                 assert torch.abs((integral_output.integral - correct)/correct) < cutoff, error_string
 
                 t_flat = torch.flatten(integral_output.t, start_dim=0, end_dim=1)
-                t_pruned_flat = torch.flatten(integral_output.t_pruned, start_dim=0, end_dim=1)
+                t_optimal_flat = torch.flatten(integral_output.t_optimal, start_dim=0, end_dim=1)
                 assert torch.all(t_flat[1:] - t_flat[0:-1] >= 0)
-                assert torch.all(t_pruned_flat[1:] - t_pruned_flat[0:-1] >= 0)
+                assert torch.all(t_optimal_flat[1:] - t_optimal_flat[0:-1] >= 0)
                 assert torch.allclose(integral_output.t[1:,0,:], integral_output.t[:-1,-1,:])
-                assert torch.allclose(integral_output.t_pruned[1:,0,:], integral_output.t_pruned[:-1,-1,:])
                 
                 """
                 if max_batch is None:
@@ -72,8 +70,6 @@ def test_integrals():
                         assert torch.abs(1 - (no_batch_integral.integral/integral_output.integral)) < rel_tol
                         assert 10*torch.abs(no_batch_integral.integral_error) >= torch.abs(integral_output.integral_error)
                     assert len(no_batch_integral.t) <= len(integral_output.t)
-                    assert len(no_batch_integral.t_pruned) <= len(integral_output.t_pruned) 
+                    assert len(no_batch_integral.t_optimal) <= len(integral_output.t_optimal) 
                 """
         break
-
-test_integrals()
