@@ -9,7 +9,14 @@ from .methods import _get_method, UNIFORM_METHODS, VARIABLE_METHODS
 from .base import SolverBase, IntegralOutput, steps
 
 class ParallelAdaptiveStepsizeSolver(SolverBase):
-    def __init__(self, remove_cut=0.1, use_absolute_error_ratio=True, error_calc_idx=None, *args, **kwargs):
+    def __init__(
+            self,
+            remove_cut=0.1,
+            max_path_change=None,
+            use_absolute_error_ratio=True, 
+            error_calc_idx=None, 
+            *args, 
+            **kwargs):
         """
         Args:
         remove_cut (float): Cut to remove integration steps with error ratios
@@ -22,6 +29,7 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
         super().__init__(*args, **kwargs)
         assert remove_cut < 1.
         self.remove_cut = remove_cut
+        self.max_path_change = max_path_change
         self.use_absolute_error_ratio = use_absolute_error_ratio
 
         self.method = None
@@ -551,6 +559,14 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
             sum_steps: [N, D]
             integral: [D]
         """
+        if self.error_calc_idx is not None:
+            sum_step_errors = sum_step_errors[:,self.error_calc_idx, None]
+            integral = integral[self.error_calc_idx, None]
+            if sum_steps is not None:
+                sum_steps = sum_steps[:,self.error_calc_idx, None]
+            if cum_sum_steps is not None:
+                cum_sum_steps = cum_sum_steps[:,self.error_calc_idx, None]
+
         if self.use_absolute_error_ratio:
             return self._compute_error_ratios_absolute(
                 sum_step_errors, integral
@@ -915,11 +931,13 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
                 )
             
         if t is None:
+            t_is_given = False
             t_step_barriers = t_init\
                 + (t_final - t_init)/N_init_steps*torch.arange(
                     N_init_steps+1, device=self.device
                 ).unsqueeze(-1)
         else:
+            t_is_given = True
             t_step_barriers = t
         t_step_trackers = torch.ones(len(t_step_barriers), device=self.device).to(bool)
         t_step_trackers[-1] = False # t_final cannot be a step starting point
@@ -932,6 +950,7 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
 
         #print("T STEPS INIT", t_init.shape, t_init, t_step_barriers.shape, t_step_barriers)
         record = {}
+        ii = 0
         while torch.any(t_step_trackers):
             """
             # Initial time should start at the end of the previous batch
@@ -982,6 +1001,7 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
             method_output = self._calculate_integral(
                 t_step_eval, y_step_eval, y0=torch.zeros(1, device=self.device)
             )
+            #print("METH OUT", method_output.integral.shape, method_output.integral_error.shape, method_output.sum_steps.shape, method_output.sum_step_errors.shape, method_output.h.shape)
             if len(record) == 0:
                 current_integral = method_output.integral.detach()
                 all_sum_steps = method_output.sum_steps.detach()
@@ -997,16 +1017,12 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
                 cum_sum_steps = torch.cumsum(all_sum_steps, 0)[idxs_input]
             if verbose_speed: print("\t calc integrals 1", time.time() - t0)
             #print("METHOD OUTPUT", t_step_eval.shape, method_output.sum_steps.shape)
-            
+
+            #print("CURR INT", current_integral) 
             # Calculate error
             t0 = time.time()
-            if self.error_calc_idx is None:
-                sum_step_errors = method_output.sum_step_errors
-            else:
-                sum_step_errors =\
-                    method_output.sum_step_errors[:,self.error_calc_idx, None]
             error_ratios, error_ratios_2steps = self._compute_error_ratios(
-                sum_step_errors=sum_step_errors,
+                sum_step_errors=method_output.sum_step_errors,
                 cum_sum_steps=cum_sum_steps,
                 integral=current_integral,
             )
@@ -1016,11 +1032,20 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
             if verbose:
                 print("ERROR1", error_ratios)
                 print("ERROR2", error_ratios_2steps)
-            
+
+            if t_is_given and self.max_path_change is not None:
+                fail_ratio = torch.sum(error_ratios > 1.).to(float)/len(error_ratios)
+                if fail_ratio >= self.max_path_change:
+                    print(f"WARNING: {fail_ratio*100}% of integration steps failed error requirements, which is greater than max_path_change ({self.max_path_change}), now exiting.")
+                    return None
             # Remove components with large errors
                 
             #print("BEFORE ADAPTIVE", t_step_eval.shape, t_step_barriers.shape, t_step_trackers.shape, y_step_eval.shape, error_ratios.shape)
             #print(t_step_barriers[:,0])
+            """
+            #print("errors", error_ratios[:10].cpu().numpy(), torch.amax(error_ratios).item(), torch.argmax(error_ratios).item(),t_step_eval[aerr,:,0])
+            print("Before Adaptive", len(t_step_eval), t_step_eval[:10,0,0].cpu().numpy())
+            """
             method_output, y_step_eval, t_step_eval,\
             t_step_barriers, t_step_trackers, error_ratios = self._adaptively_add_steps(
                 method_output=method_output,
@@ -1031,6 +1056,9 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
                 t_step_barrier_idxs=step_idxs,
                 t_step_trackers=t_step_trackers
             )
+            """
+            print("After Adaptive", len(t_step_eval), t_step_eval[:10,0,0].cpu().numpy())
+            """
             t_step_barriers_diff = t_step_barriers[1:,0] - t_step_barriers[:-1,0]
             assert (
                 torch.all(t_step_barriers_diff + self.atol_assert > 0)\
