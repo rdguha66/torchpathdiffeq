@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "torchpathdiffeq"
-description="A Python package description goes here."
+description="Parallelized path integration numerical method built on pytorch with backprop capabilities."
 version = "0.0.1"
 readme = "README.md"
 license = { text = "CC-BY 4.0" }
 authors = [{ name = "Kareem Hegazy", email = "khegazy@berkeley.edu" }]
-keywords = ["MyKeyword1", "MyKeyword2"]
+keywords = ["path integral", "torch"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
