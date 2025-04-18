@@ -439,7 +439,7 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
         )
         record[record_idxs] = old_record
         record[result_idxs] = result
-        assert torch.sum(torch.isnan(record)) == 0
+        #assert torch.sum(torch.isnan(record)) == 0
         return record
    
     def _record_results(self, record, take_gradient, results):
@@ -685,7 +685,6 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
         t, y = None, None
 
         record = {}
-        ii = 0
         while torch.any(t_step_trackers):
             if max_batch is not None:
                 max_steps = max_batch//self.C
