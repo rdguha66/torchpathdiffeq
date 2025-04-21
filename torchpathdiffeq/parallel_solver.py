@@ -38,7 +38,6 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
         self.Cm1 = None
         self.t_step_barriers_previous = None
         self.previous_ode_fxn = None
-        self.ode_eval_unit_size = None
         self.error_calc_idx = error_calc_idx
 
 
@@ -526,9 +525,10 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
         t_test = t_test.unsqueeze(0)
         self.ode_unit_mem_size = None
         
-        N = 1
+        N = 10
+        max_evals = 2*N
         eval_time = 0
-        while eval_time < 0.1 and N < 1e9:
+        while eval_time < 0.1 and N < 1e9 and N < max_evals:
             t0 = time.time()
             t_input = torch.tile(t_test, (N, 1))
             mem_before = self._get_memory()
@@ -541,6 +541,8 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
             self.ode_unit_mem_size = 2.1*max(0, (mem_before[0] - mem_after[0])/float(N))
             eval_time = time.time() - t0
             N = 10*N
+            max_evals = self._get_max_ode_evals(1.0)
+        print("Ending unit memory search")
 
     def _get_usable_memory(self, total_mem_usage): 
         free, total = self._get_memory()
@@ -634,7 +636,7 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
         assert total_mem_usage <= 1.0 and total_mem_usage > 0,\
             "total_mem_usage is a ratio and must be 0 < total_mem_usage <= 1"
         same_ode_fxn = ode_fxn.__name__ == self.previous_ode_fxn
-        if not same_ode_fxn:
+        if not same_ode_fxn and max_batch is None:
             self._setup_memory_checks(ode_fxn, t_init, ode_args=ode_args)
         assert self._get_max_ode_evals(total_mem_usage) > (2*self.Cm1 + 1),\
             "Not enough free memory to run 2 integration steps, consider increasing total_mem_usage"
