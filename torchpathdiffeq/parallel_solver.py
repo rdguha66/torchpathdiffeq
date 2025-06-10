@@ -540,16 +540,15 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
             result = ode_fxn(t_input, *ode_args)
             mem_after = self._get_memory()
             del result
-            self.ode_unit_mem_size = 2.1*max(0, (mem_before[0] - mem_after[0])/float(N))
+            self.ode_unit_mem_size = max(0, (mem_before[0] - mem_after[0])/float(N))
             eval_time = time.time() - t0
             N = 10*N
             max_evals = self._get_max_ode_evals(0.8)
-        print("Ending unit memory search")
+        print("Ending unit memory search", self.ode_unit_mem_size)
 
     def _get_usable_memory(self, total_mem_usage): 
         free, total = self._get_memory()
-        buffer = (1 - total_mem_usage)*total
-        return max(0, free - buffer)
+        return total_mem_usage*free
     
     def _get_max_ode_evals(self, total_mem_usage):
         usable = self._get_usable_memory(total_mem_usage)
@@ -649,8 +648,9 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
         same_ode_fxn = ode_fxn.__name__ == self.previous_ode_fxn
         if not same_ode_fxn and max_batch is None:
             self._setup_memory_checks(ode_fxn, t_init, ode_args=ode_args)
-        assert self._get_max_ode_evals(total_mem_usage) > (2*self.Cm1 + 1),\
-            "Not enough free memory to run 2 integration steps, consider increasing total_mem_usage"
+
+            assert self._get_max_ode_evals(total_mem_usage) > (2*self.Cm1 + 1),\
+                "Not enough free memory to run 2 integration steps, consider increasing total_mem_usage"
         loss_fxn = loss_fxn if loss_fxn is not None else self._integral_loss
 
         # Make sure ode_fxn exists and provides the correct output
@@ -724,6 +724,8 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
                 *ode_args
             )
             y_step_eval = torch.reshape(y_step_eval, (N, C, -1))
+            assert y_step_eval.dtype == t.dtype,\
+                "Integrator dtype is determined by input time dtype, it must match ode_fxn output dtype"
             
             # Evaluate integral
             t0 = time.time()
