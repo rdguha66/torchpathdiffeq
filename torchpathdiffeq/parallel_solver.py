@@ -424,7 +424,8 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
         return error_ratio, error_ratio_2steps
  
     def _get_sorted_indices(self, record, result):
-        idxs_sorted = torch.searchsorted(record, result)
+        #idxs_sorted = torch.searchsorted(record, result)
+        idxs_sorted = torch.searchsorted(record.contiguous(), result.contiguous())
         idxs_input = idxs_sorted + torch.arange(len(result), device=self.device)
         idxs_keep = torch.arange(len(result) + len(record), device=self.device)
         keep_mask = torch.ones(len(idxs_keep), device=self.device).to(bool)
@@ -684,7 +685,8 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
                 + (t_final - t_init)/N_init_steps*torch.arange(
                     N_init_steps+1, device=self.device
                 ).unsqueeze(-1)
-            #TODO: Reuse get_initial_t_steps
+            # Initialize t using t_step_eval from the first iteration
+            t = None  # Will be initialized in the loop
         else:
             t_is_given = True
             t_step_barriers = t
@@ -723,6 +725,8 @@ class ParallelAdaptiveStepsizeSolver(SolverBase):
                 torch.flatten(t_step_eval, start_dim=0, end_dim=-2),
                 *ode_args
             )
+            if t is None:
+                t = t_step_eval
             y_step_eval = torch.reshape(y_step_eval, (N, C, -1))
             assert y_step_eval.dtype == t.dtype,\
                 "Integrator dtype is determined by input time dtype, it must match ode_fxn output dtype"
